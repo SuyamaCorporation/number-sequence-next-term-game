@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数列 次の項 当てゲーム</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-rose-950 min-h-screen text-white">
+  <div class="max-w-xl mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold mb-1 text-rose-200">数列 次の項 当てゲーム</h1>
+    <p class="text-rose-400 mb-6 text-sm">数列の次の項を当てよう！ヒント機能付き</p>
+
+    <!-- Stats -->
+    <div class="flex gap-3 mb-6">
+      <div class="bg-rose-900 rounded-xl px-4 py-2 text-center flex-1">
+        <p class="text-xs text-rose-400">スコア</p>
+        <p id="scoreDisp" class="text-2xl font-bold text-rose-200">0</p>
+      </div>
+      <div class="bg-rose-900 rounded-xl px-4 py-2 text-center flex-1">
+        <p class="text-xs text-rose-400">問題</p>
+        <p id="qNumDisp" class="text-2xl font-bold text-rose-300">1</p>
+      </div>
+      <div class="ml-auto flex items-center">
+        <button onclick="restartGame()" aria-label="リセット" class="px-3 py-2 bg-rose-800 hover:bg-rose-700 rounded-lg text-sm font-semibold transition">リセット</button>
+      </div>
+    </div>
+
+    <!-- Quiz area -->
+    <div id="quizArea">
+      <div class="bg-rose-900 rounded-2xl p-6 mb-4">
+        <div class="flex items-center justify-between mb-4">
+          <span id="seqType" class="text-xs font-semibold text-rose-300 bg-rose-800 px-3 py-1 rounded-full"></span>
+          <button onclick="showHint()" id="hintBtn" aria-label="ヒントを表示" class="text-xs text-rose-400 hover:text-rose-200 underline transition">ヒント</button>
+        </div>
+        <p id="hintText" class="hidden text-sm text-yellow-300 bg-rose-800 rounded-xl px-4 py-2 mb-3"></p>
+
+        <!-- Sequence display -->
+        <div class="flex flex-wrap gap-2 items-center mb-6">
+          <div id="seqItems" class="flex flex-wrap gap-2 items-center"></div>
+          <div class="w-16 h-12 border-2 border-rose-400 rounded-xl flex items-center justify-center text-rose-300 text-xl font-bold">?</div>
+        </div>
+
+        <input id="answerInput" type="number" placeholder="次の項を入力..." autocomplete="off"
+          class="w-full bg-rose-800 text-white text-xl font-mono text-center rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-rose-400 mb-3">
+        <button onclick="submitAnswer()" aria-label="送信" class="w-full bg-rose-600 hover:bg-rose-700 font-bold py-3 rounded-xl transition text-lg">送信</button>
+      </div>
+
+      <!-- Feedback -->
+      <div id="feedback" class="hidden bg-rose-900 rounded-2xl p-5 mb-4">
+        <p id="fbResult" class="font-bold text-lg mb-2"></p>
+        <div id="fbExplanation" class="text-sm text-rose-300 bg-rose-800 rounded-xl p-4"></div>
+        <button onclick="nextQuestion()" aria-label="次の問題へ" class="mt-4 w-full bg-rose-600 hover:bg-rose-700 font-bold py-3 rounded-xl transition">次の問題 →</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+    function isPrime(n) {
+      if (n < 2) return false;
+      for (let i = 2; i <= Math.sqrt(n); i++) if (n % i === 0) return false;
+      return true;
+    }
+    function primes(n) { const r = []; let c = 2; while(r.length < n) { if(isPrime(c)) r.push(c); c++; } return r; }
+    function triangular(n) { return n*(n+1)/2; }
+    function squares(n) { return n*n; }
+    function binomial(n, k) {
+      if (k > n) return 0;
+      if (k === 0 || k === n) return 1;
+      return binomial(n-1, k-1) + binomial(n-1, k);
+    }
+
+    // Sequence generators: each returns array of terms (length 6 or 7)
+    function genArithmetic() {
+      const a = Math.floor(Math.random()*10) + 1;
+      const d = Math.floor(Math.random()*15) - 5 || 2;
+      const terms = Array.from({length:6}, (_,i) => a + d*i);
+      return {
+        terms, next: a + d*6,
+        type:'等差数列',
+        hint:'各項の差が一定（公差 ' + d + '）',
+        formula:`a_n = ${a} + (n-1)×${d}`,
+        explanation:`初項 ${a}、公差 ${d} の等差数列。a_{n+1} - a_n = ${d} で一定。次の項: ${terms[terms.length-1]} + ${d} = ${a + d*6}`
+      };
+    }
+
+    function genGeometric() {
+      const a = Math.floor(Math.random()*5) + 1;
+      const r = [2, 3, -2, 0.5][Math.floor(Math.random()*3)];
+      const terms = Array.from({length:5}, (_,i) => a * Math.pow(r,i));
+      if (terms.some(t => !Number.isInteger(t))) return genArithmetic();
+      return {
+        terms, next: a * Math.pow(r, 5),
+        type:'等比数列',
+        hint:`各項の比が一定（公比 ${r}）`,
+        formula:`a_n = ${a} × ${r}^(n-1)`,
+        explanation:`初項 ${a}、公比 ${r} の等比数列。a_{n+1} / a_n = ${r} で一定。次の項: ${terms[terms.length-1]} × ${r} = ${a * Math.pow(r,5)}`
+      };
+    }
+
+    function genFibonacci() {
+      let a = Math.floor(Math.random()*3)+1, b = Math.floor(Math.random()*3)+1;
+      const terms = [a, b];
+      for (let i = 2; i < 6; i++) terms.push(terms[i-1]+terms[i-2]);
+      const next = terms[terms.length-1] + terms[terms.length-2];
+      return {
+        terms, next,
+        type:'フィボナッチ型',
+        hint:'前2項の和が次の項',
+        formula:'a_n = a_{n-1} + a_{n-2}',
+        explanation:`前2項の和が次の項になるフィボナッチ型。${terms[4]} + ${terms[5]} = ${next}`
+      };
+    }
+
+    function genTriangular() {
+      const start = Math.floor(Math.random()*3)+1;
+      const terms = Array.from({length:5}, (_,i) => triangular(start+i));
+      const next = triangular(start+5);
+      return {
+        terms, next,
+        type:'三角数',
+        hint:'n番目の三角数: n(n+1)/2',
+        formula:'T_n = n(n+1)/2',
+        explanation:`三角数（T_n = n(n+1)/2）の列。T_${start+5} = ${start+5}×${start+6}/2 = ${next}`
+      };
+    }
+
+    function genSquares() {
+      const start = Math.floor(Math.random()*4)+1;
+      const terms = Array.from({length:5}, (_,i) => squares(start+i));
+      const next = squares(start+5);
+      return {
+        terms, next,
+        type:'平方数',
+        hint:'n番目の平方数: n²',
+        formula:'a_n = n²',
+        explanation:`平方数（n²）の列。${start+5}² = ${next}`
+      };
+    }
+
+    function genPrimes() {
+      const ps = primes(8);
+      const start = Math.floor(Math.random()*3);
+      const terms = ps.slice(start, start+5);
+      const next = ps[start+5] || primes(start+7)[start+5];
+      return {
+        terms, next,
+        type:'素数列',
+        hint:'全て素数（1と自身のみで割り切れる数）',
+        formula:'n番目の素数 p_n',
+        explanation:`素数（${terms.join(', ')}, ...）の列。次の素数は ${next}`
+      };
+    }
+
+    function genFactorial() {
+      const terms = [1,1,2,6,24,120];
+      return {
+        terms, next: 720,
+        type:'階乗列',
+        hint:'n! = 1×2×...×n',
+        formula:'a_n = n!',
+        explanation:`階乗列（n!）。0!=1, 1!=1, 2!=2, 3!=6, 4!=24, 5!=120 → 6! = 720`
+      };
+    }
+
+    function genBinomial() {
+      const n = Math.floor(Math.random()*3)+4;
+      const terms = Array.from({length:Math.min(n+1,6)}, (_,k) => binomial(n,k));
+      const next = terms.length <= n ? binomial(n, terms.length) : 0;
+      if (terms.length < 5) return genArithmetic();
+      return {
+        terms, next,
+        type:'二項係数',
+        hint:`パスカルの三角形の第${n}行 C(${n}, k)`,
+        formula:`C(${n}, k) = ${n}! / (k! × (${n}-k)!)`,
+        explanation:`二項係数 C(${n}, k)。C(${n},0)=1, C(${n},1)=${n}, ... 次: C(${n},${terms.length})=${next}`
+      };
+    }
+
+    function genPowerOf2() {
+      const start = Math.floor(Math.random()*3);
+      const terms = Array.from({length:5}, (_,i) => Math.pow(2, start+i));
+      const next = Math.pow(2, start+5);
+      return {
+        terms, next,
+        type:'2の累乗',
+        hint:`各項は 2^n（公比2の等比数列）`,
+        formula:`a_n = 2^(n+${start-1})`,
+        explanation:`2の累乗列。2^${start+5} = ${next}`
+      };
+    }
+
+    function genCustomDiff() {
+      // 差が等差数列（2階差分一定）
+      const a = Math.floor(Math.random()*5)+2;
+      const d = [2,3,4][Math.floor(Math.random()*3)];
+      const terms = [a];
+      let diff = d;
+      for (let i = 0; i < 5; i++) { terms.push(terms[terms.length-1]+diff); diff+=d; }
+      const next = terms[terms.length-1] + diff;
+      return {
+        terms: terms.slice(0,5), next: terms[5],
+        type:'2階等差数列',
+        hint:'差の列がさらに等差数列になっている',
+        formula:`差の列: ${d}, ${2*d}, ${3*d}, ... (公差${d})`,
+        explanation:`差の列 ${d}, ${2*d}, ${3*d}, ${4*d}, ${5*d} は等差数列（2階差分 = ${d}）。次の差: ${5*d+d}、次の項: ${terms[4]} + ${5*d+d} = ${terms[5]}`
+      };
+    }
+
+    const generators = [
+      genArithmetic, genArithmetic,
+      genGeometric,
+      genFibonacci,
+      genTriangular,
+      genSquares,
+      genPrimes,
+      genFactorial,
+      genBinomial,
+      genPowerOf2,
+      genCustomDiff,
+    ];
+
+    let current = null, qNum = 1, score = 0, hintUsed = false;
+
+
+    function restartGame() {
+      qNum = 1; score = 0; hintUsed = false;
+      document.getElementById('scoreDisp').textContent = '0';
+      document.getElementById('feedback').classList.add('hidden');
+      loadQuestion();
+    }
+
+    function loadQuestion() {
+      hintUsed = false;
+      document.getElementById('feedback').classList.add('hidden');
+      document.getElementById('hintText').classList.add('hidden');
+      document.getElementById('qNumDisp').textContent = qNum;
+      document.getElementById('answerInput').value = '';
+
+      const gen = generators[Math.floor(Math.random() * generators.length)];
+      current = gen();
+
+      // Safety: if next is huge or not integer, fallback
+      if (!Number.isInteger(current.next) || Math.abs(current.next) > 100000) {
+        current = genArithmetic();
+      }
+
+      document.getElementById('seqType').textContent = current.type;
+      document.getElementById('hintText').textContent = `ヒント: ${current.hint}`;
+
+      const container = document.getElementById('seqItems');
+      container.innerHTML = '';
+      current.terms.forEach(t => {
+        const el = document.createElement('div');
+        el.className = 'w-12 h-12 bg-rose-800 rounded-xl flex items-center justify-center text-lg font-bold text-rose-100';
+        el.textContent = t;
+        container.appendChild(el);
+
+        const sep = document.createElement('span');
+        sep.className = 'text-rose-600 font-bold';
+        sep.textContent = ',';
+        container.appendChild(sep);
+      });
+
+      document.getElementById('answerInput').focus();
+    }
+
+    function showHint() {
+      hintUsed = true;
+      document.getElementById('hintText').classList.remove('hidden');
+    }
+
+    function submitAnswer() {
+      const val = parseInt(document.getElementById('answerInput').value);
+      if (isNaN(val)) return;
+      const isOk = val === current.next;
+      if (isOk) { score += hintUsed ? 5 : 10; }
+
+      document.getElementById('scoreDisp').textContent = score;
+
+      const fb = document.getElementById('feedback');
+      fb.classList.remove('hidden');
+      document.getElementById('fbResult').textContent = isOk
+        ? `✅ 正解！${hintUsed ? '（ヒント使用: +5点）' : '（+10点）'}`
+        : `❌ 不正解。正解は ${current.next}`;
+      document.getElementById('fbResult').className = `font-bold text-lg mb-2 ${isOk ? 'text-emerald-400' : 'text-red-400'}`;
+      document.getElementById('fbExplanation').textContent = current.explanation;
+
+      qNum++;
+    }
+
+    function nextQuestion() {
+      document.getElementById('feedback').classList.add('hidden');
+      loadQuestion();
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !document.getElementById('feedback').classList.contains('hidden') === false) submitAnswer();
+    });
+
+    restartGame();
+  </script>
+</body>
+</html>
